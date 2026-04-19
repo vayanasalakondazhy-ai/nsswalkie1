@@ -1,0 +1,8 @@
+{
+  "name": "NSS Vox: Walkie-Talkie",
+  "description": "A professional walkie-talkie application for NSS volunteers with crystal-clear audio and admin-to-user communication.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
