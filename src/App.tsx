@@ -40,23 +40,46 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // If a custom URL is provided (from static hosting), use it. otherwise use env or origin.
-      const backendUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
-      const socketOptions = backendUrl ? { path: '/socket.io' } : {};
+      // Intelligently determine the backend URL
+      // Priority 1: User explicitly typed a URL in Config
+      // Priority 2: VITE_APP_URL from environment (baked in by GitHub Actions)
+      // Priority 3: Same origin (if in AI Studio)
+      let rawUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
+      
+      // If we are on GitHub Pages and have no VITE_APP_URL, we should NOT go same-origin
+      const isOnGitHub = window.location.hostname.includes('github.io');
+      const backendUrl = (rawUrl && rawUrl !== window.location.origin)
+        ? (rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`).replace(/\/$/, '')
+        : (isOnGitHub ? '' : ''); // Fallback for same-origin if not on GitHub
+
+      const socketOptions: any = {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 2000,
+        path: '/socket.io'
+      };
       
       const newSocket = backendUrl 
         ? io(backendUrl, socketOptions) 
-        : io();
+        : io(socketOptions);
 
       socketRef.current = newSocket;
       setSocket(newSocket);
 
       newSocket.on('connect', () => {
+        console.log('Connected to NSS Comms Cloud');
         setConnected(true);
         newSocket.emit('join', { name: user.name, role: user.role });
       });
 
+      newSocket.on('connect_error', (err) => {
+        console.error('Handshake failed:', err.message);
+        setConnected(false);
+      });
+
       newSocket.on('user-list', (list: NSSUser[]) => {
+        console.log('Received updated volunteer roster:', list.length);
         setUserList(list);
       });
 
@@ -67,7 +90,26 @@ export default function App() {
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           }
           const ctx = audioContextRef.current;
-          const buffer = await ctx.decodeAudioData(data.blob);
+          
+          if (ctx.state === 'suspended') {
+            await ctx.resume();
+          }
+
+          // More resilient data conversion
+          let audioData: ArrayBuffer;
+          if (data.blob instanceof ArrayBuffer) {
+            audioData = data.blob;
+          } else if ((data.blob as any).buffer instanceof ArrayBuffer) {
+            audioData = (data.blob as any).buffer;
+          } else if (Array.isArray(data.blob) || (data.blob as any).data) {
+            // Handle raw array or Socket.io Buffer object
+            const rawData = (data.blob as any).data || data.blob;
+            audioData = new Uint8Array(rawData).buffer;
+          } else {
+            throw new Error('Unsupported audio data format');
+          }
+          
+          const buffer = await ctx.decodeAudioData(audioData.slice(0));
           const source = ctx.createBufferSource();
           source.buffer = buffer;
           source.connect(ctx.destination);
@@ -76,7 +118,7 @@ export default function App() {
             setIncomingSpeaker(null);
           };
         } catch (err) {
-          console.error('Audio playback error:', err);
+          console.error('Audio processing failed:', err);
           setIncomingSpeaker(null);
         }
       });
@@ -94,8 +136,20 @@ export default function App() {
   const startRecording = useCallback(async () => {
     if (!socketRef.current) return;
     try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      
+      // Select best supported MIME type
+      const mimeTypes = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/aac'];
+      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+      
+      const recorder = new MediaRecorder(stream, supportedMimeType ? { mimeType: supportedMimeType } : undefined);
       mediaRecorderRef.current = recorder;
       chunksRef.current = [];
 
@@ -105,7 +159,7 @@ export default function App() {
 
       recorder.onstop = async () => {
         if (chunksRef.current.length > 0 && socketRef.current) {
-          const fullBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const fullBlob = new Blob(chunksRef.current, { type: supportedMimeType || 'audio/wav' });
           const buffer = await fullBlob.arrayBuffer();
           socketRef.current.emit('audio-chunk', {
             blob: buffer,
@@ -118,7 +172,7 @@ export default function App() {
       setIsRecording(true);
       socketRef.current.emit('speaking-state', true);
     } catch (err) {
-      console.error('Recording start error:', err);
+      console.error('Handshake failed/Permission denied:', err);
     }
   }, [targetUser]);
 
@@ -382,8 +436,31 @@ export default function App() {
 function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: string) => void }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('user');
-  const [serverUrl, setServerUrl] = useState(import.meta.env.VITE_APP_URL || '');
+  // Initialize with VITE_APP_URL or fallback to a known HQ if on GitHub
+  const defaultUrl = import.meta.env.VITE_APP_URL || (window.location.hostname.includes('github.io') ? 'https://ais-pre-inf7ds2nx7abuaxzkrdiuw-708795681477.asia-southeast1.run.app' : '');
+  const [serverUrl, setServerUrl] = useState(defaultUrl);
   const [showConfig, setShowConfig] = useState(false);
+  const [testResult, setTestResult] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
+
+  const testConnection = async () => {
+    if (!serverUrl) return;
+    setTestResult('checking');
+    try {
+      let url = serverUrl.trim();
+      if (!url.startsWith('http')) url = `https://${url}`;
+      url = url.replace(/\/$/, '');
+      
+      const response = await fetch(`${url}/api/health`, { mode: 'cors' });
+      if (response.ok) {
+        setTestResult('success');
+      } else {
+        setTestResult('failed');
+      }
+    } catch (e) {
+      console.error(e);
+      setTestResult('failed');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-bg-dark flex items-center justify-center p-6 font-sans">
@@ -412,7 +489,7 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
                   onClick={() => setShowConfig(!showConfig)}
                   className="text-[8px] opacity-40 hover:opacity-100 flex items-center gap-1"
                 >
-                  <Activity className="w-2.5 h-2.5" /> SERVER CONFIG
+                  <Activity className="w-2.5 h-2.5" /> {showConfig ? 'HIDE CONFIG' : 'SERVER CONFIG'}
                 </button>
               </label>
               <input 
@@ -428,18 +505,34 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
              <motion.div 
                initial={{ height: 0, opacity: 0 }}
                animate={{ height: 'auto', opacity: 1 }}
-               className="space-y-3 overflow-hidden"
+               className="space-y-3 overflow-hidden bg-black/20 p-4 rounded-xl border border-border-dim/20"
              >
-                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue">Transmission Gateway (URL)</label>
-                <input 
-                   type="text"
-                   value={serverUrl}
-                   onChange={(e) => setServerUrl(e.target.value)}
-                   placeholder="https://your-server-url.app"
-                   className="w-full px-4 py-2 bg-black/40 rounded-lg border border-border-dim/30 text-[11px] text-text-dim font-mono outline-none focus:border-accent-blue"
-                />
-                <p className="text-[8px] text-text-dim font-medium italic opacity-50 px-1">
-                  * Only change this if hosting on a static platform like GitHub Pages.
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue">Transmission Gateway</label>
+                  {testResult === 'success' && <span className="text-[8px] text-status-green font-bold">LINK READY</span>}
+                  {testResult === 'failed' && <span className="text-[8px] text-accent-red font-bold">LINK FAILED</span>}
+                </div>
+                <div className="flex gap-2">
+                  <input 
+                     type="text"
+                     value={serverUrl}
+                     onChange={(e) => setServerUrl(e.target.value)}
+                     placeholder="https://comm-server.run.app"
+                     className="flex-1 px-3 py-2 bg-black/40 rounded-lg border border-border-dim/30 text-[10px] text-text-dim font-mono outline-none focus:border-accent-blue"
+                  />
+                  <button 
+                    onClick={testConnection}
+                    disabled={testResult === 'checking'}
+                    className={cn(
+                      "px-3 rounded-lg text-[9px] font-bold uppercase transition-all whitespace-nowrap border",
+                      testResult === 'success' ? "border-status-green text-status-green" : "border-accent-blue text-accent-blue hover:bg-accent-blue hover:text-white"
+                    )}
+                  >
+                    {testResult === 'checking' ? '...' : 'TEST'}
+                  </button>
+                </div>
+                <p className="text-[8px] text-text-dim font-medium italic opacity-50">
+                  * Must be a secure HTTPS URL for mobile audio features.
                 </p>
              </motion.div>
            )}
