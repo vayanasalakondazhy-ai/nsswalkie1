@@ -447,17 +447,31 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
     setTestResult('checking');
     try {
       let url = serverUrl.trim();
+      // Auto-fix protocol if missing
       if (!url.startsWith('http')) url = `https://${url}`;
+      // Strip trailing slash
       url = url.replace(/\/$/, '');
       
-      const response = await fetch(`${url}/api/health`, { mode: 'cors' });
+      // Use a shorter timeout for the test
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(`${url}/api/health`, { 
+        mode: 'cors',
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      clearTimeout(timeoutId);
+
       if (response.ok) {
         setTestResult('success');
       } else {
+        console.warn('Server responded but check failed:', response.status);
         setTestResult('failed');
       }
     } catch (e) {
-      console.error(e);
+      console.error('Network check failure:', e);
       setTestResult('failed');
     }
   };

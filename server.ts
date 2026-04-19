@@ -13,14 +13,20 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   
-  // Enable CORS for all routes (important for GitHub Pages to Google Cloud comms)
-  app.use(cors());
+  // Explicitly permissive CORS for cross-origin radio gateway access
+  app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true
+  }));
   
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
       origin: '*',
-      methods: ['GET', 'POST']
+      methods: ['GET', 'POST'],
+      credentials: true
     },
   });
 
