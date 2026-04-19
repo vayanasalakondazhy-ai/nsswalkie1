@@ -454,24 +454,30 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
       
       // Use a shorter timeout for the test
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for slower networks
 
       const response = await fetch(`${url}/api/health`, { 
         mode: 'cors',
+        cache: 'no-cache',
         signal: controller.signal,
-        headers: { 'Accept': 'application/json' }
+        headers: { 
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
       });
       
       clearTimeout(timeoutId);
 
       if (response.ok) {
+        const data = await response.json();
+        console.log('Server verified. Users active:', data.users);
         setTestResult('success');
       } else {
-        console.warn('Server responded but check failed:', response.status);
+        console.warn('Server handoff refused:', response.status);
         setTestResult('failed');
       }
-    } catch (e) {
-      console.error('Network check failure:', e);
+    } catch (e: any) {
+      console.error('Comms check failed:', e.name === 'AbortError' ? 'Timeout' : e.message);
       setTestResult('failed');
     }
   };

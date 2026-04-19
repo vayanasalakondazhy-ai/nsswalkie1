@@ -15,11 +15,16 @@ async function startServer() {
   
   // Explicitly permissive CORS for cross-origin radio gateway access
   app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => callback(null, true),
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
   }));
+  
+  // Explicit handle for pre-flight OPTIONS requests
+  app.options('*', cors() as any);
   
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -28,6 +33,7 @@ async function startServer() {
       methods: ['GET', 'POST'],
       credentials: true
     },
+    allowEIO3: true // Support older clients if necessary
   });
 
   const PORT = 3000;
