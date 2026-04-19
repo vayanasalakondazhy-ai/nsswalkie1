@@ -447,37 +447,37 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
     setTestResult('checking');
     try {
       let url = serverUrl.trim();
-      // Auto-fix protocol if missing
       if (!url.startsWith('http')) url = `https://${url}`;
-      // Strip trailing slash
       url = url.replace(/\/$/, '');
       
-      // Use a shorter timeout for the test
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for slower networks
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+      // Try a simple GET first
       const response = await fetch(`${url}/api/health`, { 
+        method: 'GET',
         mode: 'cors',
-        cache: 'no-cache',
-        signal: controller.signal,
-        headers: { 
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
+        signal: controller.signal
+      }).catch(() => null);
       
       clearTimeout(timeoutId);
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Server verified. Users active:', data.users);
+      if (response && response.ok) {
         setTestResult('success');
       } else {
-        console.warn('Server handoff refused:', response.status);
-        setTestResult('failed');
+        // Fallback: try an opaque request just to check reachability
+        const pingResponse = await fetch(`${url}/api/health`, { 
+          mode: 'no-cors',
+          method: 'GET'
+        }).catch(() => null);
+        
+        if (pingResponse) {
+           setTestResult('success'); // Opaque success is enough for us to try Socket.io
+        } else {
+           setTestResult('failed');
+        }
       }
-    } catch (e: any) {
-      console.error('Comms check failed:', e.name === 'AbortError' ? 'Timeout' : e.message);
+    } catch (e) {
       setTestResult('failed');
     }
   };

@@ -13,18 +13,19 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   
-  // Explicitly permissive CORS for cross-origin radio gateway access
-  app.use(cors({
-    origin: (origin, callback) => callback(null, true),
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-    credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-  }));
-  
-  // Explicit handle for pre-flight OPTIONS requests
-  app.options('*', cors() as any);
+  // Maximum permissive CORS for global radio gateway access
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
+    
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+    } else {
+      next();
+    }
+  });
   
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -33,7 +34,8 @@ async function startServer() {
       methods: ['GET', 'POST'],
       credentials: true
     },
-    allowEIO3: true // Support older clients if necessary
+    allowEIO3: true,
+    connectTimeout: 45000, // Longer timeout for flaky mobile connections
   });
 
   const PORT = 3000;
