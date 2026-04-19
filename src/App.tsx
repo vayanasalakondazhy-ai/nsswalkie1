@@ -32,6 +32,7 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [incomingSpeaker, setIncomingSpeaker] = useState<{ name: string; isPrivate: boolean } | null>(null);
   const [connected, setConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'IDLE' | 'CONNECTING' | 'CONNECTED' | 'ERROR'>('IDLE');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -40,6 +41,7 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
+      setConnectionStatus('CONNECTING');
       // Determine the transmission gateway
       const rawUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
       const isOnGitHub = window.location.hostname.includes('github.io');
@@ -78,6 +80,7 @@ export default function App() {
         console.log('--- LINK ESTABLISHED ---');
         console.log('TRANSMISSION LINK ID:', newSocket.id);
         setConnected(true);
+        setConnectionStatus('CONNECTED');
         newSocket.emit('join', { name: user.name, role: user.role });
       });
 
@@ -86,6 +89,11 @@ export default function App() {
         console.error('REASON:', err.message);
         console.error('OPTIONS USED:', socketOptions.transports);
         setConnected(false);
+        setConnectionStatus('ERROR');
+        // If we fail on polling, it might be a CORS hurdle.
+        if (err.message === 'xhr poll error') {
+          console.warn('XHR Poll Error detected. This often implies a CORS or Proxy issue.');
+        }
       });
 
       newSocket.on('user-list', (list: NSSUser[]) => {
@@ -198,7 +206,24 @@ export default function App() {
   }, []);
 
   if (!user) {
-    return <LoginView onJoin={(name, role, serverUrl) => setUser({ name, role, serverUrl })} />;
+    return (
+      <LoginView 
+        onJoin={async (name, role, serverUrl) => {
+          // ACTIVATE AUDIO CONTEXT ON JOIN CLICK
+          try {
+            if (!audioContextRef.current) {
+              audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+            }
+            if (audioContextRef.current.state === 'suspended') {
+              await audioContextRef.current.resume();
+            }
+          } catch (e) {
+            console.error('Hardware audio activation failed:', e);
+          }
+          setUser({ name, role, serverUrl });
+        }} 
+      />
+    );
   }
 
   return (
@@ -219,9 +244,17 @@ export default function App() {
               <Activity className="w-3.5 h-3.5 text-accent-blue" />
               <span>ENCRYPTION: <span className="text-white">AES-256</span></span>
            </div>
-           <div className={cn("flex items-center gap-2", connected ? "text-status-green" : "text-accent-red")}>
-              <div className={cn("w-2 h-2 rounded-full", connected ? "bg-status-green animate-pulse" : "bg-accent-red")} />
-              <span>{connected ? "SYSTEM ONLINE" : "NETWORK OFFLINE"}</span>
+           <div className={cn("flex items-center gap-2", connected ? "text-status-green" : connectionStatus === 'CONNECTING' ? "text-accent-blue" : "text-accent-red")}>
+              <div className={cn("w-2 h-2 rounded-full", 
+                connected ? "bg-status-green animate-pulse" : 
+                connectionStatus === 'CONNECTING' ? "bg-accent-blue animate-bounce" :
+                "bg-accent-red"
+              )} />
+              <span>
+                {connected ? "SYSTEM ONLINE" : 
+                 connectionStatus === 'CONNECTING' ? "LINKING HQ..." : 
+                 "NETWORK OFFLINE"}
+              </span>
            </div>
            <button 
               onClick={() => setUser(null)}
