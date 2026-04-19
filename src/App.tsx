@@ -41,7 +41,7 @@ export default function App() {
   useEffect(() => {
     if (user) {
       // If hosted on GitHub Pages, connect to the cloud server. Otherwise use same origin.
-      const backendUrl = process.env.VITE_APP_URL || '';
+      const backendUrl = import.meta.env.VITE_APP_URL || '';
       const socketOptions = backendUrl ? { path: '/socket.io' } : {};
       
       const newSocket = backendUrl 
