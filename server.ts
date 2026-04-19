@@ -30,12 +30,14 @@ async function startServer() {
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
-      origin: '*',
+      origin: (origin: any, callback: any) => callback(null, true),
       methods: ['GET', 'POST'],
       credentials: true
     },
     allowEIO3: true,
-    connectTimeout: 45000, // Longer timeout for flaky mobile connections
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
   });
 
   const PORT = 3000;

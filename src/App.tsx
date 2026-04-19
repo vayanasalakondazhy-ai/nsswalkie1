@@ -41,23 +41,27 @@ export default function App() {
   useEffect(() => {
     if (user) {
       // Intelligently determine the backend URL
-      // Priority 1: User explicitly typed a URL in Config
-      // Priority 2: VITE_APP_URL from environment (baked in by GitHub Actions)
-      // Priority 3: Same origin (if in AI Studio)
       let rawUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
-      
-      // If we are on GitHub Pages and have no VITE_APP_URL, we should NOT go same-origin
       const isOnGitHub = window.location.hostname.includes('github.io');
-      const backendUrl = (rawUrl && rawUrl !== window.location.origin)
-        ? (rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`).replace(/\/$/, '')
-        : (isOnGitHub ? '' : ''); // Fallback for same-origin if not on GitHub
+      
+      // Default HQ if on GitHub but no URL provided
+      const hqFallback = 'https://ais-pre-inf7ds2nx7abuaxzkrdiuw-708795681477.asia-southeast1.run.app';
+      
+      let backendUrl = '';
+      if (rawUrl && rawUrl !== window.location.origin) {
+        backendUrl = (rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`).replace(/\/$/, '');
+      } else if (isOnGitHub) {
+        backendUrl = hqFallback;
+      }
 
       const socketOptions: any = {
-        transports: ['websocket', 'polling'],
+        // Favor polling for the initial handshake to bypass proxy/firewall websocket blocks
+        transports: ['polling', 'websocket'], 
         reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 2000,
-        path: '/socket.io'
+        reconnectionAttempts: Infinity, // Never stop trying
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 20000,
       };
       
       const newSocket = backendUrl 
@@ -554,6 +558,9 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
                 <p className="text-[8px] text-text-dim font-medium italic opacity-50">
                   * Must be a secure HTTPS URL for mobile audio features.
                 </p>
+                <div className="mt-2 p-2 bg-black/60 rounded border border-white/5 text-[7px] font-mono text-white/30 truncate">
+                  TARGET: {serverUrl || 'AUTO (SAME-ORIGIN)'}
+                </div>
              </motion.div>
            )}
 
