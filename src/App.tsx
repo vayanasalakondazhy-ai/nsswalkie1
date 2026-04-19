@@ -40,11 +40,9 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // Intelligently determine the backend URL
-      let rawUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
+      // Determine the transmission gateway
+      const rawUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
       const isOnGitHub = window.location.hostname.includes('github.io');
-      
-      // Default HQ if on GitHub but no URL provided
       const hqFallback = 'https://ais-pre-inf7ds2nx7abuaxzkrdiuw-708795681477.asia-southeast1.run.app';
       
       let backendUrl = '';
@@ -54,14 +52,19 @@ export default function App() {
         backendUrl = hqFallback;
       }
 
+      console.log('--- LINK PHASE INITIATED ---');
+      console.log('TARGET MISSION CONTROL:', backendUrl || 'LOCAL (SAME-ORIGIN)');
+      console.log('CLIENT HOST:', window.location.hostname);
+
       const socketOptions: any = {
-        // Favor polling for the initial handshake to bypass proxy/firewall websocket blocks
-        transports: ['polling', 'websocket'], 
+        transports: ['polling', 'websocket'], // Polling is safer for initial handshake
         reconnection: true,
-        reconnectionAttempts: Infinity, // Never stop trying
+        reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         timeout: 20000,
+        withCredentials: true,
+        forceNew: true
       };
       
       const newSocket = backendUrl 
@@ -72,18 +75,21 @@ export default function App() {
       setSocket(newSocket);
 
       newSocket.on('connect', () => {
-        console.log('Connected to NSS Comms Cloud');
+        console.log('--- LINK ESTABLISHED ---');
+        console.log('TRANSMISSION LINK ID:', newSocket.id);
         setConnected(true);
         newSocket.emit('join', { name: user.name, role: user.role });
       });
 
       newSocket.on('connect_error', (err) => {
-        console.error('Handshake failed:', err.message);
+        console.error('--- LINK FAILURE ---');
+        console.error('REASON:', err.message);
+        console.error('OPTIONS USED:', socketOptions.transports);
         setConnected(false);
       });
 
       newSocket.on('user-list', (list: NSSUser[]) => {
-        console.log('Received updated volunteer roster:', list.length);
+        console.log('ROSTER SYNC:', list.length, 'VOLUNTEERS ACTIVE');
         setUserList(list);
       });
 
@@ -558,8 +564,17 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: 
                 <p className="text-[8px] text-text-dim font-medium italic opacity-50">
                   * Must be a secure HTTPS URL for mobile audio features.
                 </p>
-                <div className="mt-2 p-2 bg-black/60 rounded border border-white/5 text-[7px] font-mono text-white/30 truncate">
-                  TARGET: {serverUrl || 'AUTO (SAME-ORIGIN)'}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Signal className="w-3 h-3 text-accent-blue" />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-text-dim">Transmission Gateway</span>
+                  </div>
+                  <div className="p-3 bg-black/60 rounded-xl border border-white/10 flex flex-col gap-1">
+                     <div className="text-[7px] font-bold text-accent-blue uppercase tracking-tighter">Current Target:</div>
+                     <div className="text-[9px] font-mono text-white/60 truncate selection:bg-accent-blue/30">
+                        {serverUrl || 'LOCAL (SAME-ORIGIN)'}
+                     </div>
+                  </div>
                 </div>
              </motion.div>
            )}

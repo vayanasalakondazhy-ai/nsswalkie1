@@ -13,19 +13,19 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   
-  // Maximum permissive CORS for global radio gateway access
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Accept');
-    
-    // Handle preflight
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(204);
-    } else {
-      next();
-    }
+  // Use official CORS package with dynamic origin mirroring for cross-domain stability
+  const corsMiddleware = cors({
+    origin: (origin, callback) => {
+      // Allow any origin to connect, repeating the origin back to the client
+      // to satisfy browsers when credentials=true is used.
+      callback(null, true);
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    credentials: true
   });
+
+  app.use(corsMiddleware);
   
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
@@ -38,6 +38,7 @@ async function startServer() {
     pingTimeout: 60000,
     pingInterval: 25000,
     connectTimeout: 45000,
+    transports: ['polling', 'websocket']
   });
 
   const PORT = 3000;
