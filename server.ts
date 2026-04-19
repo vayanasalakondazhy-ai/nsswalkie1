@@ -5,16 +5,22 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import cors from 'cors';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  
+  // Enable CORS for all routes (important for GitHub Pages to Google Cloud comms)
+  app.use(cors());
+  
   const httpServer = createServer(app);
   const io = new Server(httpServer, {
     cors: {
       origin: '*',
+      methods: ['GET', 'POST']
     },
   });
 
