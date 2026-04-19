@@ -25,7 +25,7 @@ interface IncomingAudio {
 }
 
 export default function App() {
-  const [user, setUser] = useState<{ name: string; role: Role } | null>(null);
+  const [user, setUser] = useState<{ name: string; role: Role; serverUrl?: string } | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [userList, setUserList] = useState<NSSUser[]>([]);
   const [targetUser, setTargetUser] = useState<string | null>(null);
@@ -40,8 +40,8 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      // If hosted on GitHub Pages, connect to the cloud server. Otherwise use same origin.
-      const backendUrl = import.meta.env.VITE_APP_URL || '';
+      // If a custom URL is provided (from static hosting), use it. otherwise use env or origin.
+      const backendUrl = user.serverUrl || import.meta.env.VITE_APP_URL || '';
       const socketOptions = backendUrl ? { path: '/socket.io' } : {};
       
       const newSocket = backendUrl 
@@ -53,7 +53,7 @@ export default function App() {
 
       newSocket.on('connect', () => {
         setConnected(true);
-        newSocket.emit('join', user);
+        newSocket.emit('join', { name: user.name, role: user.role });
       });
 
       newSocket.on('user-list', (list: NSSUser[]) => {
@@ -134,7 +134,7 @@ export default function App() {
   }, []);
 
   if (!user) {
-    return <LoginView onJoin={(name, role) => setUser({ name, role })} />;
+    return <LoginView onJoin={(name, role, serverUrl) => setUser({ name, role, serverUrl })} />;
   }
 
   return (
@@ -155,9 +155,9 @@ export default function App() {
               <Activity className="w-3.5 h-3.5 text-accent-blue" />
               <span>ENCRYPTION: <span className="text-white">AES-256</span></span>
            </div>
-           <div className="flex items-center gap-2 text-status-green">
-              <div className="w-2 h-2 rounded-full bg-status-green animate-pulse" />
-              <span>SYSTEM ONLINE</span>
+           <div className={cn("flex items-center gap-2", connected ? "text-status-green" : "text-accent-red")}>
+              <div className={cn("w-2 h-2 rounded-full", connected ? "bg-status-green animate-pulse" : "bg-accent-red")} />
+              <span>{connected ? "SYSTEM ONLINE" : "NETWORK OFFLINE"}</span>
            </div>
            <button 
               onClick={() => setUser(null)}
@@ -379,9 +379,11 @@ export default function App() {
   );
 }
 
-function LoginView({ onJoin }: { onJoin: (name: string, role: Role) => void }) {
+function LoginView({ onJoin }: { onJoin: (name: string, role: Role, customUrl?: string) => void }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('user');
+  const [serverUrl, setServerUrl] = useState(import.meta.env.VITE_APP_URL || '');
+  const [showConfig, setShowConfig] = useState(false);
 
   return (
     <div className="min-h-screen bg-bg-dark flex items-center justify-center p-6 font-sans">
@@ -404,7 +406,15 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role) => void }) {
 
         <div className="space-y-8">
            <div className="space-y-3">
-              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue">Volunteer Identification</label>
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue flex justify-between">
+                Volunteer Identification
+                <button 
+                  onClick={() => setShowConfig(!showConfig)}
+                  className="text-[8px] opacity-40 hover:opacity-100 flex items-center gap-1"
+                >
+                  <Activity className="w-2.5 h-2.5" /> SERVER CONFIG
+                </button>
+              </label>
               <input 
                  type="text"
                  value={name}
@@ -413,6 +423,26 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role) => void }) {
                  className="w-full px-5 py-4 bg-bg-dark rounded-xl border-2 border-border-dim/50 focus:border-accent-blue text-white outline-none transition-all placeholder:text-white/10 font-mono text-sm uppercase tracking-widest font-bold"
               />
            </div>
+
+           {showConfig && (
+             <motion.div 
+               initial={{ height: 0, opacity: 0 }}
+               animate={{ height: 'auto', opacity: 1 }}
+               className="space-y-3 overflow-hidden"
+             >
+                <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue">Transmission Gateway (URL)</label>
+                <input 
+                   type="text"
+                   value={serverUrl}
+                   onChange={(e) => setServerUrl(e.target.value)}
+                   placeholder="https://your-server-url.app"
+                   className="w-full px-4 py-2 bg-black/40 rounded-lg border border-border-dim/30 text-[11px] text-text-dim font-mono outline-none focus:border-accent-blue"
+                />
+                <p className="text-[8px] text-text-dim font-medium italic opacity-50 px-1">
+                  * Only change this if hosting on a static platform like GitHub Pages.
+                </p>
+             </motion.div>
+           )}
 
            <div className="space-y-3">
               <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-accent-blue">Authorization level</label>
@@ -445,7 +475,7 @@ function LoginView({ onJoin }: { onJoin: (name: string, role: Role) => void }) {
            </div>
 
            <button 
-              onClick={() => name && onJoin(name, role)}
+              onClick={() => name && onJoin(name, role, serverUrl)}
               disabled={!name}
               className="group relative w-full overflow-hidden rounded-2xl bg-accent-blue p-5 font-black uppercase tracking-[0.3em] text-white shadow-[0_10px_30px_rgba(37,99,235,0.4)] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-30 disabled:grayscale disabled:scale-100 disabled:pointer-events-none"
            >

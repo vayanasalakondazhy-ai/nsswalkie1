@@ -5,12 +5,14 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const appUrl = process.env.APP_URL || env.APP_URL || '';
+
   return {
     base: './',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'import.meta.env.VITE_APP_URL': JSON.stringify(env.APP_URL),
+      'import.meta.env.VITE_APP_URL': JSON.stringify(appUrl),
     },
     resolve: {
       alias: {
